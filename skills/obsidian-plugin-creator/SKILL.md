@@ -55,6 +55,8 @@ Copy-paste templates are in `references/scaffold/` — see §11 for the exact fi
 
 Commit `main.js` if you want BRAT-style GitHub installs; otherwise gitignore it and tag release builds.
 
+**Rename every placeholder** the sample ships with: `MyPlugin`, `MyPluginSettings`, `SampleSettingTab`, etc. Reviewers flag these on submission. Organize `src/` into subfolders once the plugin outgrows a handful of files.
+
 ---
 
 ## 2. Deploy loop (build → copy → reload)
@@ -91,7 +93,13 @@ this.addCommand({
 });
 ```
 
-Pick the narrowest callback shape: `callback`, `editorCallback`, `checkCallback`, or `editorCheckCallback`. Check-variants return a boolean for "is this command available right now" when `checking === true` — use them to grey out commands in the palette.
+Pick the narrowest callback shape (official guidance):
+
+- `callback` — runs unconditionally.
+- `checkCallback` — only runs under certain conditions; return `true` from the `checking === true` branch to show it in the palette.
+- `editorCallback` / `editorCheckCallback` — requires an active Markdown editor; Obsidian gates availability for you.
+
+**Do not set a default hotkey** (`hotkeys: [...]`). Defaults collide across OSes and stomp user-configured bindings. Let the user assign one.
 
 ### Events — **always** use `registerEvent`
 
@@ -140,21 +148,31 @@ Persistence: `loadData`/`saveData` read/write `.obsidian/plugins/<id>/data.json`
 
 ## 5. Vault I/O
 
-Prefer the right adapter every time:
+Pick the right API — this order is enforced in plugin review:
 
 | Need | API |
 | :--- | :--- |
-| Read a note as text | `app.vault.read(tFile)` |
-| Modify a note | `app.vault.modify(tFile, content)` |
+| Edit the **active** note | `editor.replaceRange/setValue/...` via the `Editor` API |
+| Modify a **background** note atomically | `app.vault.process(tFile, data => newData)` |
+| Read a note as text | `app.vault.read(tFile)` / `cachedRead(tFile)` for bulk scans |
 | Create a note | `app.vault.create(path, content)` |
 | Create a folder | `app.vault.createFolder(path)` (ignore "already exists") |
 | Delete (trash) | `app.vault.delete(tFile)` (Obsidian trash, not permanent) |
-| Check existence | `app.vault.getAbstractFileByPath(path) instanceof TFile` |
+| Look up by path (file) | `app.vault.getFileByPath(path)` |
+| Look up by path (folder) | `app.vault.getFolderByPath(path)` |
+| Look up by path (unknown) | `app.vault.getAbstractFileByPath(path)` + `instanceof TFile`/`TFolder` |
 | Update frontmatter safely | `app.fileManager.processFrontMatter(tFile, fm => { ... })` |
 | Rename/move (updates links) | `app.fileManager.renameFile(tFile, newPath)` |
 | List markdown notes | `app.vault.getMarkdownFiles()` |
+| Normalize a user-supplied path | `normalizePath(path)` from `obsidian` |
 
-Prefer `fileManager.processFrontMatter` over parsing YAML yourself — it preserves formatting, comments, and trailing newlines. Prefer `fileManager.renameFile` over `vault.rename` because it rewrites wikilinks across the vault.
+Rules of thumb:
+
+- **Editor > `Vault.modify` > `Vault.process`.** `Vault.modify` on the active note loses cursor/selection/fold state; the Editor API preserves it. `Vault.process` is atomic — use it for background writes so you don't race other plugins editing the same file.
+- **Prefer the Vault API over the Adapter API** (`app.vault.adapter.*`). The Vault API has a read cache and serializes writes; the Adapter API is raw FS and bypasses both.
+- **Never iterate `getFiles()` / `getMarkdownFiles()` to find a path.** Use `getFileByPath` / `getFolderByPath` — O(1) vs O(n).
+- **Always `normalizePath`** anything that came from user input or that you stitched together yourself. It collapses `\`/`/`, strips leading/trailing slashes, replaces NBSPs, and runs Unicode NFC.
+- Prefer `fileManager.processFrontMatter` over parsing YAML yourself — it preserves formatting and runs atomically. Prefer `fileManager.renameFile` over `vault.rename` so wikilinks across the vault get rewritten.
 
 ---
 
@@ -175,6 +193,69 @@ const data = r.json;            // already parsed
 ```
 
 Wrap it behind a narrow adapter interface (`HttpRequest`) so the network layer is testable without Obsidian present — see §8.
+
+---
+
+## 6.5 DOM construction (safety)
+
+`innerHTML`, `outerHTML`, and `insertAdjacentHTML` are **banned** by the plugin guidelines. User-supplied text concatenated into an HTML string is an XSS vector — a note title containing `<script>` is enough. Use Obsidian's helpers, which escape text for you:
+
+```ts
+// ❌ Banned
+container.innerHTML = `<div class="hit"><b>${name}</b></div>`;
+
+// ✅ Use DOM helpers
+const hit = container.createDiv({ cls: "hit" });
+hit.createEl("b", { text: name });
+
+// Clear contents
+container.empty();
+```
+
+`createEl`, `createDiv`, `createSpan`, and `el.empty()` are attached to every `HTMLElement` inside Obsidian. Pass `{ text, cls, attr, href }` in the options object. For anything richer, use `document.createElement` + `appendChild`.
+
+---
+
+## 6.6 Workspace, views, and the Editor
+
+- **Active view**: `app.workspace.getActiveViewOfType(MarkdownView)` — returns `null` if the active view is a different type. Avoid `workspace.activeLeaf` (the field can lag and is slated for removal).
+- **Active editor**: `app.workspace.activeEditor?.editor`. Works for Markdown editors across main/sidebar/popover surfaces.
+- **Custom views** — register the factory, don't store the instance:
+  ```ts
+  // ❌ Leaks the view across plugin reloads
+  this.registerView(MY_VIEW, () => (this.view = new MyView()));
+
+  // ✅ Look it up when you need it
+  this.registerView(MY_VIEW, () => new MyView());
+  for (const leaf of this.app.workspace.getLeavesOfType(MY_VIEW)) {
+    const v = leaf.view;
+    if (v instanceof MyView) { /* ... */ }
+  }
+  ```
+- **Don't `detach()` leaves in `onunload`.** When the user updates your plugin, Obsidian re-opens leaves in their original position; detaching throws away the user's layout.
+- **Editor extensions** — to hot-swap a registered extension, mutate the same array reference and call `app.workspace.updateOptions()`:
+  ```ts
+  this.editorExt.length = 0;
+  this.editorExt.push(this.buildExtension());
+  this.app.workspace.updateOptions();
+  ```
+  Creating a new array breaks the registration; `updateOptions` is what flushes the change to every open editor.
+
+---
+
+## 6.7 UI text and settings layout
+
+Every UI string a user sees is reviewed on submission. The rules:
+
+- **Sentence case everywhere.** "Template folder location", not "Template Folder Location". Only the first word and proper nouns capitalize.
+- **No top-level heading** in the settings tab — no "General", no "Settings", no plugin name. The tab itself is already labelled.
+- **Don't put "settings" inside section headings.** "Advanced", not "Advanced settings". "Templates", not "Settings for templates".
+- **Use `setHeading`**, not raw `<h1>`/`<h2>`:
+  ```ts
+  new Setting(containerEl).setName("Sync").setHeading();
+  ```
+- Use the `Notice` class for transient feedback; no custom toast widgets.
+- Group related settings; keep a short "general" block at the top without a heading when you have multiple sections.
 
 ---
 
@@ -330,17 +411,81 @@ Also skip: code fences `` ``` ... ``` ``, inline code `` `...` ``, existing link
 - There is **no** `property:add` / `property:append`. To append to a list property: read → append in memory → `property:set name=... value='[...]' type=list ...`.
 - Never `obsidian <sub> --help` — writes an `Untitled N.md`. Use `obsidian help` at top level only.
 
-### 10.5 General anti-patterns
+### 10.5 Mobile compatibility
+
+If `manifest.json` has `"isDesktopOnly": false`, your plugin will load on iOS and Android — where **Node and Electron APIs do not exist**. Guard any `require("fs")`, `require("path")`, `require("electron")`, `child_process`, etc. behind `Platform.isDesktop` from `obsidian`, or bail out early on mobile:
+
+```ts
+import { Platform } from "obsidian";
+if (Platform.isDesktopApp) {
+  const fs = require("fs");
+  // ...
+}
+```
+
+Regex **lookbehind** (`(?<=...)`) still crashes on older iOS WebViews. If you need to match "X preceded by Y", consume Y and back off instead of using lookbehind. Lookahead is fine everywhere.
+
+### 10.6 Styling
+
+No hardcoded `element.style.*` for colors, sizes, or backgrounds — themes and snippets can't override it. Ship a `styles.css` alongside `manifest.json` / `main.js` and use Obsidian's CSS variables for anything that should track the theme:
+
+```css
+.my-plugin-warning {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-error);
+  border: 1px solid var(--interactive-accent);
+}
+```
+
+Common variables: `--text-normal`, `--text-muted`, `--text-faint`, `--background-primary`, `--background-secondary`, `--background-modifier-{border,error,success,hover}`, `--interactive-accent`, `--interactive-hover`. Full list in the Obsidian CSS variables reference.
+
+### 10.7 Console noise
+
+Default Obsidian only surfaces `console.error` to users. Don't ship `console.log` / `console.debug` / `console.info` for normal operation — strip diagnostic logs before release or gate them behind a `settings.debug` flag. `console.error` is fine for actual errors.
+
+### 10.8 General anti-patterns
 
 - **`setInterval` in `onload`** without `registerInterval` — leaks on reload.
 - **Class methods passed as handlers** without `.bind(this)` or an arrow wrapper — `this` is lost.
 - **Module-scope state** instead of plugin-instance fields — survives reload, causes ghost bugs.
+- **Using the global `app` / `window.app`** — always use `this.app` from your `Plugin` subclass. The global is a debugging convenience and may be removed.
 - **Async work after `onunload` starts** — plugin is gone, writes are void. Guard with a `disposed` flag set in `onunload`.
 - **Raw `fetch()` against third-party APIs** — CORS. Use `requestUrl`.
 - **Regex over frontmatter** — use `processFrontMatter`.
 - **Plaintext secrets in `data.json`** — use `safeStorage`.
 - **Re-rendering the whole settings tab on change** — use captured `setValue` callbacks.
 - **Hardcoded theme colors** — use CSS variables (`--text-normal`, `--background-primary`, `--interactive-accent`) from `styles.css`.
+
+---
+
+## 10.9 Community directory compliance
+
+If the plugin will ship to the Obsidian Community Plugins directory, the [Developer policies](https://docs.obsidian.md/Developer+policies) are gating — violations block submission or trigger removal.
+
+**Hard prohibitions** (never ship these, even behind a setting):
+
+- Code obfuscation to hide behavior.
+- **Dynamic ads** loaded over the network.
+- **Static ads outside** the plugin's own UI surface (can't poke the editor, status bar, or other plugins' surfaces).
+- **Client-side telemetry** of any kind.
+- A **self-update mechanism** — updates go through Obsidian's community plugin updater.
+
+**Disclosures required in the README** (allowed if clearly stated):
+
+- Paywalled features / account-required features.
+- Network use — list every remote service and why.
+- Reading/writing files outside the vault.
+- Static ads inside the plugin's own UI.
+- Server-side telemetry — must link to a privacy policy.
+- Closed-source builds — case-by-case.
+
+**Repo hygiene**:
+
+- Ship a `LICENSE` file. State the license in the README.
+- Comply with upstream licenses of anything you vendor; attribute where required.
+- Don't imply the plugin is first-party ("Obsidian X", "Official Obsidian ...") — trademark.
+- Description ≤ 250 chars, no "This is a plugin for Obsidian that ..." boilerplate.
+- Keep `manifest.json` (`version`, `minAppVersion`) and `versions.json` (historical `minAppVersion` → plugin-version map) accurate. Obsidian uses `versions.json` to decide whether a user on an older app can install a given plugin version.
 
 ---
 
