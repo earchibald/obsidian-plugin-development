@@ -69,6 +69,7 @@ VAULT=$(obsidian vault | awk -F'\t' '/^path\t/{print $2}')
 DEST="$VAULT/.obsidian/plugins/$PLUGIN_ID"
 
 mkdir -p "$DEST"
+[ -d node_modules ] || npm ci   # first run after clone/scaffold — esbuild, typescript, etc.
 node esbuild.config.mjs production
 cp main.js manifest.json "$DEST/"
 [ -f styles.css ] && cp styles.css "$DEST/"
