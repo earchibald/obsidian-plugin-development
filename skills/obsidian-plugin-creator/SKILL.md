@@ -413,7 +413,7 @@ Also skip: code fences `` ``` ... ``` ``, inline code `` `...` ``, existing link
 
 ### 10.5 Mobile compatibility
 
-If `manifest.json` has `"isDesktopOnly": false`, your plugin will load on iOS and Android — where **Node and Electron APIs do not exist**. Guard any `require("fs")`, `require("path")`, `require("electron")`, `child_process`, etc. behind `Platform.isDesktop` from `obsidian`, or bail out early on mobile:
+If `manifest.json` has `"isDesktopOnly": false`, your plugin will load on iOS and Android — where **Node and Electron APIs do not exist**. Guard any `require("fs")`, `require("path")`, `require("electron")`, `child_process`, etc. behind `Platform.isDesktopApp` from `obsidian`, or bail out early on mobile:
 
 ```ts
 import { Platform } from "obsidian";
@@ -454,7 +454,7 @@ Default Obsidian only surfaces `console.error` to users. Don't ship `console.log
 - **Regex over frontmatter** — use `processFrontMatter`.
 - **Plaintext secrets in `data.json`** — use `safeStorage`.
 - **Re-rendering the whole settings tab on change** — use captured `setValue` callbacks.
-- **Hardcoded theme colors** — use CSS variables (`--text-normal`, `--background-primary`, `--interactive-accent`) from `styles.css`.
+- **Hardcoded theme colors / inline styles** — see §10.6.
 
 ---
 
