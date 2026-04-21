@@ -245,17 +245,14 @@ container.empty();
 
 ## 6.7 UI text and settings layout
 
-Every UI string a user sees is reviewed on submission. The rules:
+The four rules reviewers flag on submission:
 
-- **Sentence case everywhere.** "Template folder location", not "Template Folder Location". Only the first word and proper nouns capitalize.
-- **No top-level heading** in the settings tab — no "General", no "Settings", no plugin name. The tab itself is already labelled.
-- **Don't put "settings" inside section headings.** "Advanced", not "Advanced settings". "Templates", not "Settings for templates".
-- **Use `setHeading`**, not raw `<h1>`/`<h2>`:
-  ```ts
-  new Setting(containerEl).setName("Sync").setHeading();
-  ```
-- Use the `Notice` class for transient feedback; no custom toast widgets.
-- Group related settings; keep a short "general" block at the top without a heading when you have multiple sections.
+- **Sentence case** ("Template folder location", not "Template Folder Location").
+- **No top-level heading** in the settings tab (no "General", no "Settings", no plugin name).
+- **No "settings"** inside section headings ("Advanced", not "Advanced settings").
+- Use `new Setting(el).setName("…").setHeading()`, not raw `<h1>`/`<h2>`.
+
+Full checklist (Notice vs toasts, section grouping, etc.): `references/plugin-guidelines.md`.
 
 ---
 
@@ -460,32 +457,13 @@ Default Obsidian only surfaces `console.error` to users. Don't ship `console.log
 
 ## 10.9 Community directory compliance
 
-If the plugin will ship to the Obsidian Community Plugins directory, the [Developer policies](https://docs.obsidian.md/Developer+policies) are gating — violations block submission or trigger removal.
+If you'll submit to the Obsidian Community Plugins directory, the [Developer policies](https://docs.obsidian.md/Developer+policies) gate acceptance. The ones most likely to sink a submission if missed:
 
-**Hard prohibitions** (never ship these, even behind a setting):
+- **No client-side telemetry**, obfuscation, dynamic ads, or self-update mechanism. These are hard rejections — they can't be disclosed away.
+- **Any network use must be disclosed in the README** with the services called and why. Same for reading files outside the vault.
+- Ship a `LICENSE` file and keep `manifest.json` + `versions.json` accurate — the updater uses `versions.json` to gate installs on older Obsidian versions.
 
-- Code obfuscation to hide behavior.
-- **Dynamic ads** loaded over the network.
-- **Static ads outside** the plugin's own UI surface (can't poke the editor, status bar, or other plugins' surfaces).
-- **Client-side telemetry** of any kind.
-- A **self-update mechanism** — updates go through Obsidian's community plugin updater.
-
-**Disclosures required in the README** (allowed if clearly stated):
-
-- Paywalled features / account-required features.
-- Network use — list every remote service and why.
-- Reading/writing files outside the vault.
-- Static ads inside the plugin's own UI.
-- Server-side telemetry — must link to a privacy policy.
-- Closed-source builds — case-by-case.
-
-**Repo hygiene**:
-
-- Ship a `LICENSE` file. State the license in the README.
-- Comply with upstream licenses of anything you vendor; attribute where required.
-- Don't imply the plugin is first-party ("Obsidian X", "Official Obsidian ...") — trademark.
-- Description ≤ 250 chars, no "This is a plugin for Obsidian that ..." boilerplate.
-- Keep `manifest.json` (`version`, `minAppVersion`) and `versions.json` (historical `minAppVersion` → plugin-version map) accurate. Obsidian uses `versions.json` to decide whether a user on an older app can install a given plugin version.
+Full checklist (every prohibition, every disclosure, trademark rules): `references/developer-policies.md`.
 
 ---
 
@@ -494,6 +472,8 @@ If the plugin will ship to the Obsidian Community Plugins directory, the [Develo
 Under `references/`:
 
 - `runbook.md` — the full narrative this skill distills from.
+- `plugin-guidelines.md` — cheat sheet of the official Obsidian plugin review rules.
+- `developer-policies.md` — cheat sheet of the community-directory policies (what's banned, what needs disclosure, repo hygiene).
 - `scaffold/manifest.json.tmpl` — `manifest.json` with `<ID>` / `<NAME>` / `<DESCRIPTION>` placeholders.
 - `scaffold/package.json.tmpl` — dev-deps + `build`/`dev`/`test` scripts.
 - `scaffold/tsconfig.json` — strict, esnext, es2020.
