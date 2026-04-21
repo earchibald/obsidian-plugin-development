@@ -59,9 +59,9 @@ Commit `main.js` if you want BRAT-style GitHub installs; otherwise gitignore it 
 
 ---
 
-## 2. Deploy loop (build → copy → reload)
+## 2. Deploy loop (build → copy → install-or-reload)
 
-The load-bearing workflow. Once the plugin folder exists in the vault and is enabled in Settings, Claude iterates headlessly:
+The load-bearing workflow is two-phase. **First install** and **subsequent reload** use different CLI verbs — conflating them is the #1 cause of a broken initial deploy.
 
 ```bash
 PLUGIN_ID=<id>
@@ -72,12 +72,44 @@ mkdir -p "$DEST"
 node esbuild.config.mjs production
 cp main.js manifest.json "$DEST/"
 [ -f styles.css ] && cp styles.css "$DEST/"
+```
+
+After the copy, pick the right reload path:
+
+### Subsequent reloads (hot path)
+
+```bash
 obsidian plugin:reload id="$PLUGIN_ID"
+```
+
+Fast, preserves the running app. Use this every iteration once the plugin is already installed and enabled.
+
+### First install (and idempotent fallback)
+
+`obsidian plugin:reload` **fails with "Plugin not found"** on the very first copy — Obsidian hasn't scanned `.obsidian/plugins/<id>/` yet, so the id is unknown to the plugin manager. Rescan the manifests and enable in one shot via `obsidian eval`:
+
+```bash
+obsidian eval code='(async()=>{
+  await app.plugins.loadManifests();
+  await app.plugins.enablePluginAndSave("'"$PLUGIN_ID"'");
+})()'
+```
+
+`loadManifests()` picks up newly-copied plugin folders; `enablePluginAndSave()` enables + persists the choice and is a no-op if the plugin is already enabled. This block is **idempotent** — safe to run every iteration if you'd rather not branch. The "CLI has no install & enable verb" claim in older docs is wrong; this is that verb.
+
+A robust deploy helper:
+
+```bash
+obsidian plugin:reload id="$PLUGIN_ID" 2>/dev/null || \
+  obsidian eval code='(async()=>{
+    await app.plugins.loadManifests();
+    await app.plugins.enablePluginAndSave("'"$PLUGIN_ID"'");
+  })()'
 ```
 
 **Do not** `rm -rf` the plugin folder between runs — `data.json` lives there and holds user settings (incl. encrypted secrets).
 
-First-time only: after the first copy, open Obsidian → Settings → Community plugins and toggle the plugin on. The CLI has no "install & enable" verb.
+Prerequisite (one-time, manual): the vault must have **Community plugins enabled** globally (§0). The CLI cannot flip that switch.
 
 ---
 
@@ -304,6 +336,8 @@ Three commands do all the work:
 
 `obsidian help` lists everything. **Never** `obsidian <subcommand> --help` — the CLI treats `--help` as note content and creates a junk `Untitled N.md`.
 
+If `obsidian plugin:reload id=<id>` fails with "Plugin not found", the plugin manager hasn't seen the folder yet — this is the first-install case. Use the `loadManifests()` + `enablePluginAndSave()` eval from §2 instead of restarting the app.
+
 ### Standard debug cycle
 
 ```bash
@@ -405,6 +439,7 @@ Also skip: code fences `` ``` ... ``` ``, inline code `` `...` ``, existing link
 - `obsidian search` can crash with `ENOENT` on a stale index entry. Restart Obsidian or reindex. Don't rely on it for correctness.
 - `obsidian move path=<src> to=<dst>` — `to=`, not `dest=`.
 - `obsidian create` forces `.md`. For `.base` / `.canvas` / `.css`, write via the filesystem.
+- `obsidian plugin:reload id=<id>` fails with "Plugin not found" on first install (folder not yet scanned). Use the `loadManifests()` + `enablePluginAndSave()` eval from §2.
 - There is **no** `property:add` / `property:append`. To append to a list property: read → append in memory → `property:set name=... value='[...]' type=list ...`.
 - Never `obsidian <sub> --help` — writes an `Untitled N.md`. Use `obsidian help` at top level only.
 

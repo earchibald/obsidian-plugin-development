@@ -72,7 +72,18 @@ cp main.js manifest.json <vault>/.obsidian/plugins/<plugin-id>/
 obsidian plugin:reload id=<plugin-id>
 ```
 
-Put the plugin folder in place once (manually enable it in Obsidian → Community plugins once), after that Claude can iterate fully headlessly. Do **not** delete the plugin folder between runs — it holds `data.json` (user settings) and you'll nuke real state.
+`plugin:reload` is the hot path. On the **first install** it fails with "Plugin not found" because Obsidian has not scanned the freshly-copied folder yet. Bootstrap (and idempotently re-bootstrap) via `obsidian eval`:
+
+```bash
+obsidian eval code='(async()=>{
+  await app.plugins.loadManifests();
+  await app.plugins.enablePluginAndSave("<plugin-id>");
+})()'
+```
+
+`enablePluginAndSave()` is a no-op once the plugin is enabled, so this block is safe to run every iteration. A robust one-liner: `obsidian plugin:reload id=<id> 2>/dev/null || obsidian eval ...`.
+
+The only remaining manual step is enabling **Community plugins** globally in the vault (Settings → Community plugins) — the CLI cannot flip that master switch. Do **not** delete the plugin folder between runs — it holds `data.json` (user settings) and you'll nuke real state.
 
 Find the vault:
 
