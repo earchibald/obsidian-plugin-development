@@ -134,6 +134,42 @@ Pick the narrowest callback shape (official guidance):
 
 **Do not set a default hotkey** (`hotkeys: [...]`). Defaults collide across OSes and stomp user-configured bindings. Let the user assign one.
 
+### Command surfaces — palette, CLI, URI
+
+The palette is the human surface. Agents driving a vault through the `obsidian` CLI can't reach a palette-only command, and neither can scripts or keyboard launchers firing `obsidian://` URIs. **Every command an agent or user might invoke should be exposed via the palette *and* the CLI.** Fire-and-forget commands (no output needed by the caller) may additionally expose a URI endpoint.
+
+Factor the work into a plain method so all three surfaces call the same code path:
+
+```ts
+async doThing(target: string): Promise<string> { /* ... */ return "ok"; }
+
+onload() {
+  // 1. Palette
+  this.addCommand({
+    id: "do-thing",
+    name: "My plugin: do the thing",
+    callback: () => this.doThing(this.app.workspace.getActiveFile()?.path ?? ""),
+  });
+
+  // 2. CLI subcommand — obsidian 1.12.2+
+  this.registerCliHandler(
+    "do-thing",
+    "Do the thing to a note",
+    { path: { value: "<path>", description: "Note path", required: true } },
+    async (params) => this.doThing(params.path as string), // returns string printed by the CLI
+  );
+
+  // 3. URI endpoint — obsidian://my-plugin-do-thing?path=foo.md  (fire-and-forget)
+  this.registerObsidianProtocolHandler("do-thing", (params) => {
+    void this.doThing(params.path ?? "");
+  });
+}
+```
+
+`registerCliHandler(command, description, flags, handler)` — arg 3 is a `Record<string, { value?, description, required? }>`; omit `value` for boolean flags. The handler receives a flat `params` object (`string | 'true'` values) and must return `string | Promise<string>` — the CLI prints it. Requires `"minAppVersion": "1.12.2"` in `manifest.json` if the plugin depends on it; otherwise feature-detect with `typeof this.registerCliHandler === "function"`.
+
+`registerObsidianProtocolHandler(action, handler)` — callable as `obsidian://<action>?k=v&…`. **Fire-and-forget**: there is no response channel back to the caller, so don't use it for queries whose output matters. Good for "open this", "append this", "trigger this sync".
+
 ### Events — **always** use `registerEvent`
 
 ```ts
