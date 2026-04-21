@@ -338,6 +338,18 @@ Three commands do all the work:
 
 If `obsidian plugin:reload id=<id>` fails with "Plugin not found", the plugin manager hasn't seen the folder yet — this is the first-install case. Use the `loadManifests()` + `enablePluginAndSave()` eval from §2 instead of restarting the app.
 
+### Eval return-value gotchas
+
+The CLI prints the last expression via `JSON.stringify(value, null, 2)` prefixed with `=> `. A few failure modes look like "the eval silently ate my output":
+
+- **Missing `return` inside an async IIFE** → the promise resolves to `undefined` → **blank output, no error**. By far the most common cause of "empty output." Always `return` explicitly from `(async()=>{ … })()`.
+- **Returning `app`, a live plugin instance, or anything holding a back-reference to `app`** → `Error: Converting circular structure to JSON` on stdout. Project out the fields you need (`return { id: p.manifest.id, enabled: !!p.settings, hasStore: !!p.store }`) rather than returning the instance.
+- **`Map` / `Set` serialize to `{}`** silently — JSON.stringify ignores them. Convert first: `[...map.entries()]`, `[...set]`.
+- **`undefined`** anywhere in the return → blank line. Use `null` if you need to signal "nothing."
+- If you genuinely need a large/circular object round-tripped for a smoke test, stash it on `globalThis` in one eval and read back a projected string in a second eval.
+
+Plain objects, nested objects, arrays (including thousands of elements), strings, numbers, booleans, and `null` all print fine — complexity itself is not the problem.
+
 ### Standard debug cycle
 
 ```bash
