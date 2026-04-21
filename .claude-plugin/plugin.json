@@ -1,0 +1,19 @@
+{
+  "name": "obsidian-plugin-creator",
+  "version": "0.1.0",
+  "description": "Scaffold, build, and debug Obsidian plugins. Covers repo layout, esbuild deploy loop, command/event registration, settings UI, vault I/O, requestUrl networking, safeStorage secrets, pure-core testing, and the obsidian-cli debug loop (dev:debug on, dev:console, eval).",
+  "author": {
+    "name": "Eugene Archibald",
+    "url": "https://github.com/earchibald"
+  },
+  "repository": "https://github.com/earchibald/obsidian-plugin-development",
+  "license": "MIT",
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "typescript",
+    "esbuild",
+    "scaffold",
+    "debugging"
+  ]
+}
