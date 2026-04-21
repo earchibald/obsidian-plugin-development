@@ -9,7 +9,7 @@
       "name": "obsidian-plugin-creator",
       "source": "./",
       "description": "Scaffold, build, and debug Obsidian plugins — repo layout, esbuild deploy loop, command/event registration, settings UI, vault I/O, requestUrl networking, safeStorage secrets, pure-core testing, and the obsidian-cli debug loop.",
-      "version": "0.2.2"
+      "version": "0.2.3"
     }
   ]
 }
